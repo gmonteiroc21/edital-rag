@@ -47,11 +47,11 @@ ingest:  ## Indexa um PDF — uso: make ingest PDF=caminho/edital.pdf
 	@test -n "$(PDF)" || (echo "uso: make ingest PDF=caminho/edital.pdf" && exit 1)
 	curl -sS -X POST http://localhost:8000/ingest -F "arquivo=@$(PDF)" | python3 -m json.tool --no-ensure-ascii
 
-ask:  ## Pergunta — uso: make ask Q="qual o prazo de inscrição?"
-	@test -n "$(Q)" || (echo 'uso: make ask Q="sua pergunta"' && exit 1)
+ask:  ## Pergunta — uso: make ask Q="qual o prazo?" [DOC=edital.pdf]
+	@test -n "$(Q)" || (echo 'uso: make ask Q="sua pergunta" [DOC=edital.pdf]' && exit 1)
 	curl -sS -X POST http://localhost:8000/ask \
 		-H 'Content-Type: application/json' \
-		-d "$$(python3 -c 'import json,sys; print(json.dumps({"pergunta": sys.argv[1]}))' "$(Q)")" \
+		-d "$$(python3 -c 'import json,sys; print(json.dumps({"pergunta": sys.argv[1], "documento": sys.argv[2] or None}))' "$(Q)" "$(DOC)")" \
 		| python3 -m json.tool --no-ensure-ascii
 
 clean:  ## Apaga o índice local

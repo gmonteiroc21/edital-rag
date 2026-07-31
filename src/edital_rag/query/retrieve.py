@@ -46,11 +46,22 @@ def _chave(chunk: Chunk) -> tuple[str, str, int]:
     return (chunk.documento, chunk.secao, chunk.pagina_inicio)
 
 
-def recuperar(pergunta: str, top_k: int | None = None) -> list[ChunkRecuperado]:
+def recuperar(
+    pergunta: str, top_k: int | None = None, documento: str | None = None
+) -> list[ChunkRecuperado]:
     """Recupera os chunks mais relevantes para a pergunta.
 
     Cada buscador contribui com uma lista ranqueada; a fusão soma as
     contribuições recíprocas ponderadas por `peso_vetorial`.
+
+    `documento` restringe a busca a um edital. Com vários indexados, a busca sem
+    filtro mistura documentos no mesmo contexto e a resposta pode citar seção e
+    página de um edital que não é o que o usuário tinha em mente — a numeração de
+    seção se repete entre editais, então a citação sozinha não desambigua.
+
+    Levanta `ValueError` se o documento não estiver indexado. Devolver lista
+    vazia seria pior: viraria um "o edital não responde isso" indistinguível de
+    uma pergunta genuinamente sem resposta.
     """
     config = get_config()
     k = top_k or config.top_k
@@ -60,12 +71,22 @@ def recuperar(pergunta: str, top_k: int | None = None) -> list[ChunkRecuperado]:
     with store.conectar() as conexao:
         store.inicializar(conexao)
 
-        vetorial = store.buscar_vetorial(conexao, embed.embutir_pergunta(pergunta), k_bruto)
-        lexical = store.buscar_lexical(conexao, pergunta, k_bruto)
+        if documento is not None:
+            disponiveis = store.nomes_documentos(conexao)
+            if documento not in disponiveis:
+                raise ValueError(
+                    f"Documento não indexado: {documento!r}. "
+                    f"Indexados: {', '.join(disponiveis) or 'nenhum'}"
+                )
+
+        vetorial = store.buscar_vetorial(
+            conexao, embed.embutir_pergunta(pergunta), k_bruto, documento
+        )
+        lexical = store.buscar_lexical(conexao, pergunta, k_bruto, documento)
 
     logger.info(
-        "Recuperação para %r: %d vetoriais, %d lexicais",
-        pergunta[:60], len(vetorial), len(lexical)
+        "Recuperação para %r (documento=%s): %d vetoriais, %d lexicais",
+        pergunta[:60], documento or "todos", len(vetorial), len(lexical)
     )
 
     pontos: dict[tuple[str, str, int], float] = {}

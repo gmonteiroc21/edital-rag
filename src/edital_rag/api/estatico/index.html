@@ -43,7 +43,12 @@
   .doc {
     font-size: 13px; background: var(--acento-fraco); color: var(--acento);
     padding: 4px 10px; border-radius: 20px;
+    border: 1px solid transparent; font-weight: 400; font-family: inherit;
   }
+  button.doc { cursor: pointer; }
+  button.doc:hover { border-color: var(--acento); }
+  button.doc.ativo { background: var(--acento); color: #fff; }
+  #escopo { text-transform: none; letter-spacing: 0; font-weight: 400; }
 
   .campo { display: flex; gap: 8px; }
   input[type=text] {
@@ -84,6 +89,7 @@
 
   details { margin-top: 18px; border-top: 1px solid var(--borda); padding-top: 14px; }
   summary { cursor: pointer; font-size: 13px; color: var(--suave); }
+  .rolagem { overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
   th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--borda); }
   th { color: var(--suave); font-weight: 600; }
@@ -114,7 +120,7 @@
   </section>
 
   <section class="cartao">
-    <h2>Pergunta</h2>
+    <h2>Pergunta <span id="escopo"></span></h2>
     <form class="campo" id="form">
       <input type="text" id="pergunta" placeholder="qual o prazo final de inscrição?" autocomplete="off">
       <button id="enviar">Perguntar</button>
@@ -151,17 +157,46 @@ EXEMPLOS.forEach(t => {
 const escapar = s => String(s ?? "").replace(/[&<>"]/g, c =>
   ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
+// null = perguntar sobre todos os editais indexados.
+let documentoSelecionado = null;
+
 async function carregarDocs() {
   try {
     const r = await fetch("/health").then(r => r.json());
     const docs = r.documentos || [];
-    $("#docs").innerHTML = docs.map(d =>
-      `<span class="doc">${escapar(d.documento)} · ${d.chunks} trechos</span>`).join("");
+
+    // O filtro só aparece com mais de um edital indexado: com um só, "todos" e o
+    // próprio documento são a mesma consulta, e o seletor seria ruído.
+    const filtravel = docs.length > 1;
+    if (!filtravel || !docs.some(d => d.documento === documentoSelecionado))
+      documentoSelecionado = null;
+
+    const entradas = docs.map(d => ({
+      valor: d.documento, rotulo: `${d.documento} · ${d.chunks} trechos`,
+    }));
+    if (filtravel) entradas.unshift({ valor: null, rotulo: "todos os editais" });
+
+    $("#docs").innerHTML = entradas.map(e => filtravel
+      ? `<button type="button" class="doc${e.valor === documentoSelecionado ? " ativo" : ""}"
+                 data-doc="${escapar(e.valor ?? "")}">${escapar(e.rotulo)}</button>`
+      : `<span class="doc">${escapar(e.rotulo)}</span>`).join("");
+
+    $("#escopo").textContent = !filtravel ? ""
+      : documentoSelecionado ? `· em ${documentoSelecionado}`
+      : "· em todos os editais";
+
     $("#statusUpload").textContent = docs.length
       ? `${r.indice.chunks} trechos indexados`
       : "nenhum documento indexado ainda";
   } catch { /* /health indisponível: a UI ainda funciona para perguntar */ }
 }
+
+$("#docs").onclick = e => {
+  const chip = e.target.closest("button.doc");
+  if (!chip) return;
+  documentoSelecionado = chip.dataset.doc || null;
+  carregarDocs();
+};
 
 zona.onclick = () => campoArquivo.click();
 zona.ondragover = e => { e.preventDefault(); zona.classList.add("sobre"); };
@@ -182,6 +217,9 @@ async function enviarArquivo(arquivo) {
     if (!r.ok) throw new Error(j.detail || "falha na indexação");
     $("#statusUpload").textContent =
       `${j.documento}: ${j.chunks} trechos, ${j.paginas} páginas`;
+    // Quem acabou de subir um edital quer perguntar sobre ele, não sobre a
+    // mistura de tudo o que já estava indexado.
+    documentoSelecionado = j.documento;
     carregarDocs();
   } catch (e) {
     $("#statusUpload").textContent = `erro: ${e.message}`;
@@ -201,7 +239,7 @@ $("#form").onsubmit = async e => {
     const r = await fetch("/ask", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ pergunta }),
+      body: JSON.stringify({ pergunta, documento: documentoSelecionado }),
     });
     const j = await r.json();
     if (!r.ok) throw new Error(j.detail || "falha na consulta");
@@ -230,6 +268,7 @@ function renderizar({ resposta, trechos_usados }) {
 
   const linhas = (trechos_usados || []).map(t => `
     <tr>
+      <td class="origem">${escapar(t.documento)}</td>
       <td>${escapar(t.secao)}</td>
       <td>${t.pagina}</td>
       <td class="origem">${escapar(t.origem)}</td>
@@ -243,10 +282,14 @@ function renderizar({ resposta, trechos_usados }) {
     ${citacoes}
     <details>
       <summary>trechos recuperados (${(trechos_usados || []).length})</summary>
-      <table>
-        <thead><tr><th>seção</th><th>pág.</th><th>busca</th><th>caminho</th></tr></thead>
-        <tbody>${linhas}</tbody>
-      </table>
+      <div class="rolagem">
+        <table>
+          <thead>
+            <tr><th>documento</th><th>seção</th><th>pág.</th><th>busca</th><th>caminho</th></tr>
+          </thead>
+          <tbody>${linhas}</tbody>
+        </table>
+      </div>
     </details>`;
 }
 

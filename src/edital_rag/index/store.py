@@ -162,18 +162,38 @@ def _linha_para_chunk(linha: sqlite3.Row) -> Chunk:
 
 
 def buscar_vetorial(
-    conexao: sqlite3.Connection, vetor: list[float], k: int
+    conexao: sqlite3.Connection,
+    vetor: list[float],
+    k: int,
+    documento: str | None = None,
 ) -> list[tuple[Chunk, float]]:
-    """k-NN por distância. Converte distância em score onde maior é melhor."""
+    """k-NN por distância. Converte distância em score onde maior é melhor.
+
+    `documento` restringe a busca a um único arquivo indexado.
+
+    O filtro entra como `rowid IN (...)` dentro da cláusula do MATCH, e não como
+    um `WHERE c.documento = ?` depois do JOIN. A diferença não é estilística: o
+    sqlite-vec resolve a restrição de rowid **antes** de escolher os k vizinhos,
+    então a busca devolve os k melhores *do documento*. Filtrar depois do JOIN
+    escolheria os k melhores do índice inteiro e jogaria fora o que não fosse do
+    documento — devolvendo menos de k resultados, ou nenhum quando o edital
+    filtrado é o menor dos indexados.
+    """
+    filtro = "AND v.rowid IN (SELECT id FROM chunks WHERE documento = :documento)"
     linhas = conexao.execute(
-        """
+        f"""
         SELECT c.*, v.distance AS distancia
         FROM vec_chunks v
         JOIN chunks c ON c.id = v.rowid
-        WHERE v.embedding MATCH ? AND k = ?
+        WHERE v.embedding MATCH :vetor AND k = :k
+              {filtro if documento else ""}
         ORDER BY v.distance
         """,
-        (sqlite_vec.serialize_float32(vetor), k),
+        {
+            "vetor": sqlite_vec.serialize_float32(vetor),
+            "k": k,
+            "documento": documento,
+        },
     ).fetchall()
 
     return [(_linha_para_chunk(linha), 1.0 / (1.0 + linha["distancia"])) for linha in linhas]
@@ -196,21 +216,29 @@ def _consulta_fts(pergunta: str) -> str:
 
 
 def buscar_lexical(
-    conexao: sqlite3.Connection, pergunta: str, k: int
+    conexao: sqlite3.Connection,
+    pergunta: str,
+    k: int,
+    documento: str | None = None,
 ) -> list[tuple[Chunk, float]]:
-    """BM25 via FTS5. Captura o que o vetorial erra: códigos, siglas, números de item."""
+    """BM25 via FTS5. Captura o que o vetorial erra: códigos, siglas, números de item.
+
+    Aqui o filtro é um predicado comum: o `LIMIT` só é aplicado depois do WHERE,
+    então restringir por documento não custa recall.
+    """
     consulta = _consulta_fts(pergunta)
     try:
         linhas = conexao.execute(
-            """
+            f"""
             SELECT c.*, bm25(fts_chunks) AS rank
             FROM fts_chunks
             JOIN chunks c ON c.id = fts_chunks.rowid
-            WHERE fts_chunks MATCH ?
+            WHERE fts_chunks MATCH :consulta
+                  {"AND c.documento = :documento" if documento else ""}
             ORDER BY rank
-            LIMIT ?
+            LIMIT :k
             """,
-            (consulta, k),
+            {"consulta": consulta, "k": k, "documento": documento},
         ).fetchall()
     except sqlite3.OperationalError as erro:
         logger.warning("Busca lexical falhou para %r: %s", consulta, erro)
@@ -228,6 +256,16 @@ def contar(conexao: sqlite3.Connection) -> dict[str, int]:
         "SELECT COUNT(DISTINCT documento) AS n FROM chunks"
     ).fetchone()["n"]
     return {"chunks": total, "documentos": documentos}
+
+
+def nomes_documentos(conexao: sqlite3.Connection) -> list[str]:
+    """Nomes dos documentos indexados. Usado para validar o filtro de consulta."""
+    return [
+        linha["documento"]
+        for linha in conexao.execute(
+            "SELECT DISTINCT documento FROM chunks ORDER BY documento"
+        )
+    ]
 
 
 def listar_documentos(conexao: sqlite3.Connection) -> list[dict[str, object]]:

@@ -13,6 +13,7 @@ import tempfile
 from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from edital_rag.config import get_config
@@ -41,9 +42,17 @@ app = FastAPI(
 class PerguntaRequest(BaseModel):
     pergunta: str = Field(min_length=3, examples=["Qual o prazo final de inscrição?"])
     top_k: int | None = Field(default=None, ge=1, le=20)
+    documento: str | None = Field(
+        default=None,
+        description="Restringe a busca a um documento indexado (o nome que /health lista). "
+        "Omitir busca em todos — o que, com mais de um edital no índice, mistura "
+        "documentos no mesmo contexto.",
+        examples=["Edital-081_2026-assinado.pdf"],
+    )
 
 
 class TrechoUsado(BaseModel):
+    documento: str
     secao: str
     caminho: str
     pagina: int
@@ -58,6 +67,17 @@ class PerguntaResponse(BaseModel):
         description="O que a busca recuperou. Exposto para tornar o retrieval auditável — "
         "quando a resposta sai errada, é aqui que se vê se o erro foi da busca ou do modelo."
     )
+
+
+# Página única, sem build. A tese do projeto é "docker compose up e funciona";
+# um passo de `npm install` antes de ver a tela contradiria isso.
+INDEX_HTML = Path(__file__).resolve().parent / "estatico" / "index.html"
+
+
+@app.get("/", include_in_schema=False)
+def index() -> FileResponse:
+    """Interface web: upload do PDF e consulta."""
+    return FileResponse(INDEX_HTML, media_type="text/html")
 
 
 @app.get("/health", tags=["sistema"])
@@ -83,8 +103,12 @@ def health() -> dict[str, object]:
     }
 
 
+# Deliberadamente `def`, não `async def`: o corpo é todo bloqueante (pdfplumber,
+# embeddings) e num handler assíncrono travaria o event loop pela duração inteira
+# da indexação — o servidor pararia de responder e o navegador abortaria o upload.
+# Como `def`, o FastAPI executa isto no threadpool e o loop segue livre.
 @app.post("/ingest", tags=["ingestão"])
-async def ingest(arquivo: UploadFile = File(...)) -> dict[str, object]:
+def ingest(arquivo: UploadFile = File(...)) -> dict[str, object]:
     """Indexa um PDF. Reenviar o mesmo nome de arquivo substitui a versão anterior."""
     if not (arquivo.filename or "").lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Envie um arquivo .pdf")
@@ -105,7 +129,13 @@ async def ingest(arquivo: UploadFile = File(...)) -> dict[str, object]:
 @app.post("/ask", response_model=PerguntaResponse, tags=["consulta"])
 def ask(requisicao: PerguntaRequest) -> PerguntaResponse:
     """Responde uma pergunta sobre os documentos indexados, com citações."""
-    recuperados = recuperar(requisicao.pergunta, top_k=requisicao.top_k)
+    try:
+        recuperados = recuperar(
+            requisicao.pergunta, top_k=requisicao.top_k, documento=requisicao.documento
+        )
+    except ValueError as erro:
+        raise HTTPException(status_code=422, detail=str(erro)) from erro
+
     resposta = responder(requisicao.pergunta, recuperados)
 
     return PerguntaResponse(
@@ -113,6 +143,7 @@ def ask(requisicao: PerguntaRequest) -> PerguntaResponse:
         resposta=resposta,
         trechos_usados=[
             TrechoUsado(
+                documento=r.chunk.documento,
                 secao=r.chunk.secao or "preâmbulo",
                 caminho=r.chunk.caminho,
                 pagina=r.chunk.pagina_inicio,

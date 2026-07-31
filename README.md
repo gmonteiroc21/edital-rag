@@ -51,7 +51,13 @@ Pela linha de comando, se preferir:
 ```bash
 make ingest PDF=caminho/do/edital.pdf
 make ask Q="quais documentos preciso anexar na inscrição?"
+make ask Q="qual o prazo de inscrição?" DOC=edital.pdf   # restringe a um edital
 ```
+
+O índice acumula editais. Com mais de um indexado, a busca sem `DOC` mistura
+documentos no mesmo contexto — e como a numeração de seção se repete entre
+editais, "seção 5.1, página 8" não diz de qual deles veio. A interface web
+mostra um seletor assim que o segundo documento entra no índice.
 
 Documentação interativa da API em `/docs`. Sem Docker: `make install && make dev`.
 
@@ -153,6 +159,21 @@ A tarefa é sintetizar e citar um contexto **já recuperado**, não raciocinar d
 zero. `low` responde bem, mais rápido e mais barato. Se as respostas saírem rasas
 em perguntas que cruzam várias seções, o primeiro ajuste é subir para `medium` —
 não trocar de modelo.
+
+### 8. Filtro por documento dentro do k-NN, não depois dele
+
+O índice guarda vários editais, e restringir a consulta a um deles parece um
+`WHERE documento = ?` trivial. Não é, do lado vetorial: o `k` do sqlite-vec é
+resolvido antes do JOIN, então filtrar depois seleciona os k vizinhos do índice
+**inteiro** e descarta o que não for do documento pedido. Com 56 chunks de um
+edital ao lado de 415 de outro, a busca filtrada no menor voltaria quase vazia —
+e em silêncio, virando um "o edital não responde isso" indistinguível de uma
+pergunta genuinamente sem resposta.
+
+O filtro entra como `rowid IN (SELECT id FROM chunks WHERE documento = ?)`
+dentro da própria cláusula do `MATCH`, que o sqlite-vec aplica **antes** de
+escolher os vizinhos. No lado lexical não há sutileza: o `LIMIT` do FTS5 já vem
+depois do `WHERE`.
 
 ---
 
@@ -285,10 +306,14 @@ de existir a métrica.
 make test
 ```
 
-32 testes, concentrados no chunking — é onde está a decisão de design e onde
+37 testes, concentrados no chunking — é onde está a decisão de design e onde
 estavam os bugs. Os casos de falso positivo (`"15.193 registros"`,
 `"R$ 5.904,23"`, `"40 horas"`) são os mais importantes: seção fantasma contamina
 o índice sem levantar nenhum erro.
+
+Os cinco testes de `test_store_filtro.py` cobrem a outra falha silenciosa: o
+filtro por documento medido num índice desequilibrado (50 chunks de um edital,
+3 de outro), que é onde a implementação ingênua devolve zero resultados.
 
 ## Limitações conhecidas
 
@@ -302,6 +327,10 @@ o índice sem levantar nenhum erro.
   cabeçalho aninhada ficam ambíguas.
 - **Sem reranking.** Um cross-encoder sobre os top-20 melhoraria a precisão; foi
   deixado de fora por custo de latência e escopo.
+- **A citação não nomeia o documento.** O schema da resposta tem seção e página,
+  e a busca sem filtro pode cruzar editais — só a tabela de trechos recuperados
+  mostra a origem. Perguntar com o documento escolhido resolve na prática, mas o
+  caminho certo é o nome do arquivo entrar no contexto do modelo e na citação.
 - **O gabarito tem 15 perguntas e um documento.** `make eval` mede o suficiente
   para pegar regressão estrutural, não para afirmar qualidade absoluta. Um
   segundo edital de estrutura diferente provavelmente mudaria as conclusões da
