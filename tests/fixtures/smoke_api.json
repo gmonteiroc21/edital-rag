@@ -1,0 +1,40 @@
+{
+  "model": "claude-sonnet-5",
+  "max_tokens": 400,
+  "thinking": { "type": "adaptive" },
+  "output_config": {
+    "effort": "low",
+    "format": {
+      "type": "json_schema",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "encontrado": { "type": "boolean" },
+          "resposta": { "type": "string" },
+          "citacoes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "secao": { "type": "string" },
+                "pagina": { "type": "integer" },
+                "trecho": { "type": "string" }
+              },
+              "required": ["secao", "pagina", "trecho"],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": ["encontrado", "resposta", "citacoes"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "system": "Você responde perguntas sobre editais usando exclusivamente os trechos fornecidos. Toda afirmação precisa de citação: seção, página e trecho literal. Se os trechos não responderem, defina encontrado como false.",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Trechos do documento:\n\n[seção 8 | página 6]\n(em: 8 QUADRO V - DO CRONOGRAMA)\n1ª Etapa - Inscrições | 27/07/2026 | 07/08/2026\n2ª Etapa - Entrevista | 11/08/2026 | 14/08/2026\n\n---\n\nPergunta: qual o prazo final de inscrição?"
+    }
+  ]
+}
