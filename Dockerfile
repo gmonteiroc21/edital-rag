@@ -34,4 +34,11 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=90s --retries=3 \
     CMD python -c "import urllib.request;urllib.request.urlopen('http://localhost:8000/health')"
 
-CMD ["uvicorn", "edital_rag.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# --timeout-keep-alive: o default do uvicorn é 5s, mas os navegadores mantêm
+# conexões no pool por bem mais tempo (Firefox 115s, Chrome ~300s). Com 5s, o
+# servidor fecha a conexão aberta no carregamento da página enquanto o navegador
+# ainda a considera válida; o POST seguinte sai por um socket morto e falha com
+# NetworkError — sem retry, porque navegador não reenvia POST com corpo. Basta
+# o usuário levar 5s escolhendo o arquivo. 120s cobre a janela do Firefox.
+CMD ["uvicorn", "edital_rag.api.main:app", "--host", "0.0.0.0", "--port", "8000", \
+     "--timeout-keep-alive", "120"]
