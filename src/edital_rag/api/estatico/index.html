@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Consulta a editais</title>
+<style>
+  :root {
+    --bg: #fbfaf8; --superficie: #fff; --borda: #e4e0d8; --texto: #1c1a17;
+    --suave: #6b665e; --acento: #9a4f2c; --acento-fraco: #f5ece6;
+    --ok: #2f6b4f; --alerta: #8a6d1f; --alerta-fraco: #fdf6e3;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16150f; --superficie: #1f1e17; --borda: #35322a; --texto: #ece8e0;
+      --suave: #9a948a; --acento: #d98b62; --acento-fraco: #2a2119;
+      --ok: #79b894; --alerta: #d4b25e; --alerta-fraco: #2a2418;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--texto);
+    font: 15px/1.6 ui-sans-serif, system-ui, -apple-system, sans-serif;
+  }
+  main { max-width: 860px; margin: 0 auto; padding: 40px 20px 80px; }
+  h1 { font-size: 26px; margin: 0 0 4px; letter-spacing: -0.02em; }
+  .sub { color: var(--suave); margin: 0 0 32px; }
+  .cartao {
+    background: var(--superficie); border: 1px solid var(--borda);
+    border-radius: 10px; padding: 20px; margin-bottom: 20px;
+  }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em;
+       color: var(--suave); margin: 0 0 14px; font-weight: 600; }
+
+  #zona {
+    border: 1.5px dashed var(--borda); border-radius: 8px; padding: 26px;
+    text-align: center; cursor: pointer; transition: .15s; color: var(--suave);
+  }
+  #zona:hover, #zona.sobre { border-color: var(--acento); background: var(--acento-fraco); }
+  #zona strong { color: var(--texto); }
+
+  .docs { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .doc {
+    font-size: 13px; background: var(--acento-fraco); color: var(--acento);
+    padding: 4px 10px; border-radius: 20px;
+  }
+
+  .campo { display: flex; gap: 8px; }
+  input[type=text] {
+    flex: 1; padding: 12px 14px; font-size: 15px; font-family: inherit;
+    border: 1px solid var(--borda); border-radius: 8px;
+    background: var(--bg); color: var(--texto);
+  }
+  input[type=text]:focus { outline: 2px solid var(--acento); outline-offset: -1px; }
+  button {
+    padding: 12px 22px; font-size: 15px; font-weight: 600; font-family: inherit;
+    background: var(--acento); color: #fff; border: 0; border-radius: 8px; cursor: pointer;
+  }
+  button:disabled { opacity: .5; cursor: default; }
+
+  .exemplos { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+  .exemplo {
+    font-size: 13px; padding: 5px 11px; border: 1px solid var(--borda);
+    border-radius: 20px; cursor: pointer; color: var(--suave); background: none;
+    font-weight: 400;
+  }
+  .exemplo:hover { border-color: var(--acento); color: var(--acento); }
+
+  .resposta { font-size: 16px; line-height: 1.7; white-space: pre-wrap; }
+  .rotulo {
+    display: inline-block; font-size: 12px; font-weight: 600; padding: 3px 9px;
+    border-radius: 4px; margin-bottom: 12px;
+  }
+  .rotulo.sim { background: var(--acento-fraco); color: var(--ok); }
+  .rotulo.nao { background: var(--alerta-fraco); color: var(--alerta); }
+
+  .citacao {
+    border-left: 3px solid var(--acento); padding: 10px 0 10px 14px; margin-top: 14px;
+  }
+  .citacao .fonte { font-size: 12px; font-weight: 600; color: var(--acento); }
+  .citacao blockquote {
+    margin: 6px 0 0; font-size: 14px; color: var(--suave); font-style: italic;
+  }
+
+  details { margin-top: 18px; border-top: 1px solid var(--borda); padding-top: 14px; }
+  summary { cursor: pointer; font-size: 13px; color: var(--suave); }
+  table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--borda); }
+  th { color: var(--suave); font-weight: 600; }
+  td.origem { color: var(--suave); }
+
+  .aviso { font-size: 14px; color: var(--alerta); }
+  .rodape { text-align: center; color: var(--suave); font-size: 13px; margin-top: 40px; }
+  .rodape a { color: var(--acento); }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Consulta a editais</h1>
+  <p class="sub">
+    Carregue um edital em PDF e pergunte em português. Toda resposta cita seção e
+    página — ou declara que o documento não responde.
+  </p>
+
+  <section class="cartao">
+    <h2>Documento</h2>
+    <div id="zona">
+      <strong>Clique ou arraste um PDF</strong><br>
+      <span id="statusUpload">nenhum documento indexado ainda</span>
+    </div>
+    <input type="file" id="arquivo" accept="application/pdf" hidden>
+    <div class="docs" id="docs"></div>
+  </section>
+
+  <section class="cartao">
+    <h2>Pergunta</h2>
+    <form class="campo" id="form">
+      <input type="text" id="pergunta" placeholder="qual o prazo final de inscrição?" autocomplete="off">
+      <button id="enviar">Perguntar</button>
+    </form>
+    <div class="exemplos" id="exemplos"></div>
+  </section>
+
+  <section class="cartao" id="saida" hidden></section>
+
+  <p class="rodape">
+    <a href="/docs">documentação da API</a> ·
+    <a href="https://github.com/gmonteiroc21/edital-rag">código</a>
+  </p>
+</main>
+
+<script>
+const $ = s => document.querySelector(s);
+const zona = $("#zona"), campoArquivo = $("#arquivo"), saida = $("#saida");
+
+const EXEMPLOS = [
+  "quais documentos preciso anexar na inscrição?",
+  "quantos pontos vale experiência com LLMs?",
+  "qual o prazo final de inscrição?",
+  "o edital oferece plano de saúde?",
+];
+
+EXEMPLOS.forEach(t => {
+  const b = document.createElement("button");
+  b.type = "button"; b.className = "exemplo"; b.textContent = t;
+  b.onclick = () => { $("#pergunta").value = t; $("#form").requestSubmit(); };
+  $("#exemplos").append(b);
+});
+
+const escapar = s => String(s ?? "").replace(/[&<>"]/g, c =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+async function carregarDocs() {
+  try {
+    const r = await fetch("/health").then(r => r.json());
+    const docs = r.documentos || [];
+    $("#docs").innerHTML = docs.map(d =>
+      `<span class="doc">${escapar(d.documento)} · ${d.chunks} trechos</span>`).join("");
+    $("#statusUpload").textContent = docs.length
+      ? `${r.indice.chunks} trechos indexados`
+      : "nenhum documento indexado ainda";
+  } catch { /* /health indisponível: a UI ainda funciona para perguntar */ }
+}
+
+zona.onclick = () => campoArquivo.click();
+zona.ondragover = e => { e.preventDefault(); zona.classList.add("sobre"); };
+zona.ondragleave = () => zona.classList.remove("sobre");
+zona.ondrop = e => {
+  e.preventDefault(); zona.classList.remove("sobre");
+  if (e.dataTransfer.files[0]) enviarArquivo(e.dataTransfer.files[0]);
+};
+campoArquivo.onchange = () => campoArquivo.files[0] && enviarArquivo(campoArquivo.files[0]);
+
+async function enviarArquivo(arquivo) {
+  $("#statusUpload").textContent = `indexando ${arquivo.name}…`;
+  const dados = new FormData();
+  dados.append("arquivo", arquivo);
+  try {
+    const r = await fetch("/ingest", { method: "POST", body: dados });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.detail || "falha na indexação");
+    $("#statusUpload").textContent =
+      `${j.documento}: ${j.chunks} trechos, ${j.paginas} páginas`;
+    carregarDocs();
+  } catch (e) {
+    $("#statusUpload").textContent = `erro: ${e.message}`;
+  }
+}
+
+$("#form").onsubmit = async e => {
+  e.preventDefault();
+  const pergunta = $("#pergunta").value.trim();
+  if (!pergunta) return;
+
+  $("#enviar").disabled = true;
+  saida.hidden = false;
+  saida.innerHTML = '<h2>Resposta</h2><p class="sub">consultando…</p>';
+
+  try {
+    const r = await fetch("/ask", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pergunta }),
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.detail || "falha na consulta");
+    renderizar(j);
+  } catch (e) {
+    saida.innerHTML = `<h2>Resposta</h2><p class="aviso">erro: ${escapar(e.message)}</p>`;
+  } finally {
+    $("#enviar").disabled = false;
+  }
+};
+
+function renderizar({ resposta, trechos_usados }) {
+  const achou = resposta.encontrado;
+
+  // O estado "não encontrado" é deliberadamente um resultado legítimo, não um
+  // erro: o sistema recusar em vez de inventar é o comportamento desejado.
+  const rotulo = achou
+    ? '<span class="rotulo sim">respondido pelo documento</span>'
+    : '<span class="rotulo nao">o documento não responde isso</span>';
+
+  const citacoes = (resposta.citacoes || []).map(c => `
+    <div class="citacao">
+      <div class="fonte">seção ${escapar(c.secao)} · página ${c.pagina}</div>
+      <blockquote>${escapar(c.trecho)}</blockquote>
+    </div>`).join("");
+
+  const linhas = (trechos_usados || []).map(t => `
+    <tr>
+      <td>${escapar(t.secao)}</td>
+      <td>${t.pagina}</td>
+      <td class="origem">${escapar(t.origem)}</td>
+      <td class="origem">${escapar(t.caminho)}</td>
+    </tr>`).join("");
+
+  saida.innerHTML = `
+    <h2>Resposta</h2>
+    ${rotulo}
+    <div class="resposta">${escapar(resposta.resposta)}</div>
+    ${citacoes}
+    <details>
+      <summary>trechos recuperados (${(trechos_usados || []).length})</summary>
+      <table>
+        <thead><tr><th>seção</th><th>pág.</th><th>busca</th><th>caminho</th></tr></thead>
+        <tbody>${linhas}</tbody>
+      </table>
+    </details>`;
+}
+
+carregarDocs();
+</script>
+</body>
+</html>

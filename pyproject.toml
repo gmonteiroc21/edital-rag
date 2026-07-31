@@ -20,6 +20,9 @@ dependencies = [
 
 [tool.poetry]
 packages = [{ include = "edital_rag", from = "src" }]
+# Explícito porque uma falha aqui é silenciosa: a API sobe normalmente e só a
+# interface web retorna 404.
+include = [{ path = "src/edital_rag/api/estatico/*.html", format = ["sdist", "wheel"] }]
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3"
