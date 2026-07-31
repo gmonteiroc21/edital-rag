@@ -1,0 +1,16 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      # Índice SQLite: persiste entre reinícios do container.
+      - ./data:/app/data
+      # Cache dos modelos de embedding: evita rebaixar ~130MB a cada subida.
+      - modelos:/app/.cache
+    restart: unless-stopped
+
+volumes:
+  modelos:

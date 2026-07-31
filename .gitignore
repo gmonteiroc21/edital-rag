@@ -1,0 +1,30 @@
+# Segredos — NUNCA commitar
+.env
+*.pem
+*_secrets*.json
+
+# Dados e índice local
+data/*.db
+data/*.sqlite
+data/pdfs/
+!data/.gitkeep
+
+# Modelos baixados em runtime
+.cache/
+models/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+dist/
+build/
+
+# Editor / SO
+.vscode/
+.idea/
+.DS_Store
