@@ -226,10 +226,19 @@ async function enviarArquivo(arquivo) {
   }
 }
 
+// Deixa na barra de endereço a consulta que acabou de rodar, para que a
+// pergunta e o escopo sejam compartilháveis por link — ver init().
+function fixarNaUrl(pergunta) {
+  const p = new URLSearchParams({ q: pergunta });
+  if (documentoSelecionado) p.set("doc", documentoSelecionado);
+  history.replaceState(null, "", `?${p}`);
+}
+
 $("#form").onsubmit = async e => {
   e.preventDefault();
   const pergunta = $("#pergunta").value.trim();
   if (!pergunta) return;
+  fixarNaUrl(pergunta);
 
   $("#enviar").disabled = true;
   saida.hidden = false;
@@ -293,7 +302,21 @@ function renderizar({ resposta, trechos_usados }) {
     </details>`;
 }
 
-carregarDocs();
+// ?q=pergunta&doc=arquivo.pdf abre a página já com a consulta feita: é o que
+// torna um resultado com citação compartilhável por link — e o que permite
+// capturar as telas da demo sem clicar em nada.
+async function init() {
+  const url = new URLSearchParams(location.search);
+  documentoSelecionado = url.get("doc");
+  await carregarDocs();
+
+  const pergunta = (url.get("q") || "").trim();
+  if (!pergunta) return;
+  $("#pergunta").value = pergunta;
+  $("#form").requestSubmit();
+}
+
+init();
 </script>
 </body>
 </html>
