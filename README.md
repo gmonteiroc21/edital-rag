@@ -5,22 +5,47 @@ receba a resposta **com citação de seção e página** — ou uma declaração
 de que o documento não responde aquilo.
 
 ```
-$ make ask Q="qual o prazo final de inscrição?"
+$ make ask Q="qual o prazo final de inscrição?" DOC=Edital-081_2026-assinado.pdf
 
 {
+  "pergunta": "qual o prazo final de inscrição?",
   "resposta": {
     "encontrado": true,
-    "resposta": "As inscrições vão de 27/07/2026 a 07/08/2026.",
+    "resposta": "O prazo final de inscrição é 07/08/2026, conforme o cronograma da 1ª Etapa - Inscrições.",
     "citacoes": [
       {
         "secao": "8",
         "pagina": 6,
-        "trecho": "1ª Etapa - Inscrições | 27/07/2026 | 07/08/2026"
+        "trecho": "1ª Etapa - Inscrições 27/07/2026 07/08/2026"
       }
     ]
   }
 }
 ```
+
+## A interface
+
+Três consultas ao mesmo edital, na ordem em que respondem às três perguntas que
+importam: a citação confere? acerta dentro de uma tabela? e o que ele faz quando
+o documento simplesmente não responde?
+
+**1. A citação é verificável** — a resposta aponta seção e página, e o trecho
+citado vem junto para conferência.
+
+![resposta com citação de seção e página](docs/01-citacao.png)
+
+**2. Tabela** — a pontuação está no Quadro III, uma tabela. É onde RAG de PDF
+costuma devolver lixo, porque a extração embaralha as células.
+
+![resposta extraída de uma tabela de pontuação](docs/02-tabela.png)
+
+**3. Recusa** — o edital não trata de benefícios. O sistema diz isso, em vez de
+produzir uma resposta plausível e não verificável.
+
+![o sistema declarando que o documento não responde](docs/03-recusa.png)
+
+As telas são reproduzíveis: com a API no ar, `python3 scripts/capturar_demo.py`
+gera as três a partir dos links diretos.
 
 ## Por que existe
 
@@ -45,6 +70,15 @@ docker compose up --build
 Abra **http://localhost:8000** — arraste o PDF, pergunte. Não há passo de build
 de frontend: a interface é uma página única servida pelo próprio FastAPI, o que
 mantém a promessa de um comando só.
+
+Uma consulta feita fica no endereço, e o endereço reproduz a consulta:
+
+```
+http://localhost:8000/?doc=edital.pdf&q=qual+o+prazo+final+de+inscrição?
+```
+
+Abrir esse link já traz a resposta com a citação — é o que torna um resultado
+compartilhável com quem precisa conferir a fonte.
 
 Pela linha de comando, se preferir:
 
