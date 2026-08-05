@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from edital_rag.ingest.chunk import casar_secao, dividir_em_secoes
+from edital_rag.ingest.chunk import casar_anexo, casar_secao, dividir_em_secoes
 from edital_rag.models import Pagina
 
 
@@ -140,6 +140,69 @@ class TestPaginacao:
         assert "página dois" in alvo.texto
 
 
+class TestAnexos:
+    """Anexos: onde a numeração decimal do edital acaba.
+
+    Nenhum edital numera `ANEXO V` como `18`, então sem um padrão próprio todo o
+    bloco de anexos — inclusive o cronograma, que é onde moram as datas que mais
+    se pergunta — vira continuação da última seção numerada.
+    """
+
+    @pytest.mark.parametrize(
+        "linha,esperado",
+        [
+            ("ANEXO V", "ANEXO V"),
+            ("ANEXO I", "ANEXO I"),
+            ("ANEXO 1", "ANEXO 1"),
+            ("APÊNDICE II", "APÊNDICE II"),
+            ("ANEXO ÚNICO", "ANEXO ÚNICO"),
+            ("ANEXO I - REQUISITOS E DESCRIÇÃO SUMÁRIA DOS CARGOS", "ANEXO I"),
+        ],
+    )
+    def test_reconhece_cabecalho_de_anexo(self, linha: str, esperado: str) -> None:
+        casado = casar_anexo(linha)
+        assert casado is not None and casado[0] == esperado
+
+    @pytest.mark.parametrize(
+        "linha",
+        [
+            # A lista de anexos que o próprio edital traz no corpo (seção 1.10 do
+            # UFPE 12/2026) — referência, não cabeçalho.
+            "Anexo I - REQUISITOS E DESCRIÇÃO SUMÁRIA DOS CARGOS DE NÍVEL D",
+            "Os seguintes anexos integram o presente Edital:",
+            "anexo para a FADE/UFPE, através do e-mail ufpe2026@fadeconcursos.org.br",
+            "ANEXOS DESTE EDITAL",
+        ],
+    )
+    def test_ignora_referencia_a_anexo_no_corpo(self, linha: str) -> None:
+        assert casar_anexo(linha) is None
+
+    def test_anexo_abre_secao_propria(self) -> None:
+        paginas = _paginas(
+            "17.12 O prazo de impugnação será de 05 dias corridos da publicação no DOU.",
+            "ANEXO V\nCRONOGRAMA\nINSCRIÇÃO VIA INTERNET 12/08 a 08/09/2026 no site do concurso.",
+        )
+        chunks = dividir_em_secoes(paginas, "edital.pdf")
+
+        anexo = [c for c in chunks if c.secao == "ANEXO V"]
+        assert len(anexo) == 1
+        assert anexo[0].pagina_inicio == 2
+        assert anexo[0].titulo == "CRONOGRAMA"
+        assert "12/08 a 08/09/2026" in anexo[0].texto
+        # E o cronograma não contamina a seção numerada anterior.
+        assert "12/08" not in next(c.texto for c in chunks if c.secao == "17.12")
+
+    def test_lista_de_anexos_no_corpo_nao_estilhaca_a_secao(self) -> None:
+        paginas = _paginas(
+            "1.10 Os seguintes anexos integram o presente Edital:\n"
+            "Anexo I - REQUISITOS E DESCRIÇÃO SUMÁRIA DOS CARGOS\n"
+            "Anexo II - CONTEÚDO PROGRAMÁTICO DAS PROVAS\n"
+            "Anexo V - CRONOGRAMA DO CERTAME"
+        )
+        chunks = dividir_em_secoes(paginas, "edital.pdf")
+        assert [c.secao for c in chunks] == ["1.10"]
+
+
 class TestIntegridade:
     def test_nenhum_conteudo_e_perdido(self) -> None:
         """Toda linha significativa do documento aparece em algum chunk.
@@ -174,3 +237,19 @@ class TestIntegridade:
         assert len(chunks) > 1
         # Os fragmentos preservam a identidade da seção de origem.
         assert all(c.secao == "1" for c in chunks)
+
+    def test_cada_fragmento_cita_a_propria_pagina(self) -> None:
+        """Um anexo de várias páginas não pode citar a página de abertura em todos.
+
+        A citação é a promessa central do projeto: cinco fragmentos apontando
+        para a mesma página são quatro citações erradas, e erradas de um jeito
+        que só quem abre o PDF descobre.
+        """
+        corpo = "Conteúdo de preenchimento do anexo, com texto suficiente. " * 40
+        paginas = _paginas(f"ANEXO I\n{corpo}", corpo, corpo)
+        chunks = dividir_em_secoes(paginas, "edital.pdf")
+
+        assert len(chunks) > 1
+        assert all(c.secao == "ANEXO I" for c in chunks)
+        assert chunks[0].pagina_inicio == 1
+        assert chunks[-1].pagina_inicio > 1

@@ -123,6 +123,22 @@ Isso importa porque o texto de um item muitas vezes só faz sentido no contexto 
 pai. O item 5.1.6 fala de documentos da **primeira** etapa — sem a hierarquia, a
 resposta pode ser atribuída à etapa errada com total confiança.
 
+**Onde a numeração acaba: os anexos.** Nenhum edital numera `ANEXO V` como `18`,
+e o cronograma — que é o conteúdo mais perguntado de todos — vive lá. Sem um
+padrão próprio para anexos, o Edital UFPE 12/2026 colava **31 páginas** (páginas
+30 a 61: descrição de cargos, conteúdo programático, cronograma) como
+continuação da última seção numerada, a 17.12.
+
+O estrago é duplo e nenhuma metade levanta erro. O embedding de um chunk que
+mistura lista de classificação com cronograma não aponta para nada, e a busca
+vetorial deixa de alcançá-lo — na pergunta "qual o prazo final de inscrição?" o
+cronograma não aparecia entre os 20 candidatos vetoriais e vinha em 19º no BM25,
+longe do corte. E se fosse recuperado, citaria "seção 17.12, página 30" para um
+conteúdo da página 59: uma citação verificável e errada, que é pior do que
+nenhuma. Por isso `ANEXO <numeração>` também abre seção, e cada fragmento de uma
+seção subdividida carrega a própria faixa de páginas em vez da página de
+abertura.
+
 ### 2. Busca híbrida (vetorial + BM25), fundida por RRF
 
 As duas buscas erram de formas complementares. A vetorial entende paráfrase
@@ -340,10 +356,11 @@ de existir a métrica.
 make test
 ```
 
-37 testes, concentrados no chunking — é onde está a decisão de design e onde
+50 testes, concentrados no chunking — é onde está a decisão de design e onde
 estavam os bugs. Os casos de falso positivo (`"15.193 registros"`,
-`"R$ 5.904,23"`, `"40 horas"`) são os mais importantes: seção fantasma contamina
-o índice sem levantar nenhum erro.
+`"R$ 5.904,23"`, `"40 horas"`, `"Anexo I - REQUISITOS"` na lista de anexos do
+próprio edital) são os mais importantes: seção fantasma contamina o índice sem
+levantar nenhum erro.
 
 Os cinco testes de `test_store_filtro.py` cobrem a outra falha silenciosa: o
 filtro por documento medido num índice desequilibrado (50 chunks de um edital,
@@ -353,9 +370,10 @@ filtro por documento medido num índice desequilibrado (50 chunks de um edital,
 
 - **PDF escaneado não funciona.** Não há OCR no pipeline; a ingestão falha com
   mensagem explícita em vez de indexar páginas vazias.
-- **A detecção de seção assume numeração decimal** (`1`, `2.1`, `5.1.6`). Editais
-  com numeração romana ou por artigo (`Art. 5º`) caem no caminho de fallback e
-  viram um chunk único por documento.
+- **A detecção de seção assume numeração decimal** (`1`, `2.1`, `5.1.6`) ou
+  cabeçalho de anexo (`ANEXO V`, `APÊNDICE II`). Editais numerados por artigo
+  (`Art. 5º`) ou por romanos no corpo caem no caminho de fallback e viram um
+  chunk único por documento.
 - **Tabelas são serializadas como pipe-tables** e perdem células mescladas. O
   Quadro III do edital de teste sai legível, mas tabelas com hierarquia de
   cabeçalho aninhada ficam ambíguas.
@@ -366,11 +384,15 @@ filtro por documento medido num índice desequilibrado (50 chunks de um edital,
   mostra a origem. Perguntar com o documento escolhido resolve na prática, mas o
   caminho certo é o nome do arquivo entrar no contexto do modelo e na citação.
 - **O gabarito tem 15 perguntas e um documento.** `make eval` mede o suficiente
-  para pegar regressão estrutural, não para afirmar qualidade absoluta. Um
-  segundo edital de estrutura diferente provavelmente mudaria as conclusões da
-  seção anterior.
+  para pegar regressão estrutural, não para afirmar qualidade absoluta. O
+  harness é restrito ao documento do gabarito (`DOCUMENTO`, em
+  `scripts/avaliar_retrieval.py`) — sem isso a métrica mente, porque a numeração
+  de seção se repete entre editais e um chunk "8" de outro documento indexado
+  conta como acerto.
 - **Recall@6 estacionado em 0,800.** Três perguntas do gabarito não são
-  recuperadas em nenhuma configuração testada; duas são sobre o cronograma.
+  recuperadas em nenhuma configuração testada; duas são sobre o cronograma do
+  Edital 081, que é uma **tabela dentro de seção numerada** — caso diferente do
+  cronograma em anexo, que o chunker passou a tratar.
 - **O índice está acoplado à versão do `fastembed`.** Um upgrade que mude a
   estratégia de pooling do modelo exige reindexar tudo — indexar com uma versão
   e consultar com outra degrada em silêncio.

@@ -30,6 +30,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from edital_rag.query.retrieve import recuperar  # noqa: E402
 
+# O gabarito é de um documento específico, e a busca precisa ser restrita a ele.
+# Sem o filtro, a medição mente: a numeração de seção se repete entre editais, e
+# um chunk "8" de outro documento indexado conta como acerto da pergunta sobre o
+# cronograma deste. Com três editais no índice, a métrica vira ruído.
+DOCUMENTO = "Edital-081_2026-assinado.pdf"
+
 # Gabarito para o Edital FADE 081/2026. Cada entrada aceita mais de uma seção
 # quando a resposta legitimamente vive em mais de um lugar do documento.
 GABARITO: list[tuple[str, list[str]]] = [
@@ -53,14 +59,15 @@ GABARITO: list[tuple[str, list[str]]] = [
 
 def posicao_do_acerto(pergunta: str, esperadas: list[str], k: int) -> int | None:
     """Posição (1-indexada) do primeiro chunk esperado, ou None se não veio."""
-    for posicao, recuperado in enumerate(recuperar(pergunta, top_k=k), start=1):
+    recuperados = recuperar(pergunta, top_k=k, documento=DOCUMENTO)
+    for posicao, recuperado in enumerate(recuperados, start=1):
         if recuperado.chunk.secao in esperadas:
             return posicao
     return None
 
 
 def main(k: int = 6) -> int:
-    print(f"Avaliando {len(GABARITO)} perguntas com top_k={k}\n")
+    print(f"Avaliando {len(GABARITO)} perguntas com top_k={k} em {DOCUMENTO}\n")
     print(f"{'pos':<5} {'esperado':<16} pergunta")
     print("-" * 78)
 
